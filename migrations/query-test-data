@@ -2,7 +2,7 @@ FOR i IN 1..5
     LET quests = (
     FOR q IN 1..10
       RETURN {
-                id: q,
+                id: i * 10 + q,
                 title: CONCAT('quest ', q),
                 text: CONCAT('text for quest ', q),
                 regexpsNone: [],

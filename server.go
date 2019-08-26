@@ -62,7 +62,7 @@ func main() {
 	http.HandleFunc("/ws", handleConnections)
 	go handleMessages()
 	fs := http.FileServer(http.Dir("static/"))
-	http.Handle("/graphql", handler)
+	http.Handle("/graphql", disableCors(handler))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 	// http.Handle("/chat", c.Handler(server))
 	http.HandleFunc("/quest", questHandler)
@@ -291,4 +291,18 @@ func fetchQuestByiD(parentId int, id int) (*[]Quest, error) {
 		result = append(result, doc)
 	}
 	return &result, nil
+}
+
+func disableCors(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Content-Length, Accept-Encoding")
+	if r.Method == "OPTIONS" {
+	  w.Header().Set("Access-Control-Max-Age", "86400")
+	  w.WriteHeader(http.StatusOK)
+	  return
+	}
+	h.ServeHTTP(w, r)
+   })
 }
