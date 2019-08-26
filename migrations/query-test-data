@@ -1,0 +1,23 @@
+FOR i IN 1..5
+    LET quests = (
+    FOR q IN 1..10
+      RETURN {
+                id: q,
+                title: CONCAT('quest ', q),
+                text: CONCAT('text for quest ', q),
+                regexpsNone: [],
+                regexps: [],
+                code: CONCAT('code for quest ', q),
+                hints: ['hint 1', 'hint 2'],
+                test: {
+                    code: CONCAT('test code for quest ', q),
+                    answer: CONCAT('right code for quest ', q)
+                }
+            }
+    )
+  INSERT { 
+    title: CONCAT('chapter', i),
+    id: i,
+    quests: quests
+    } 
+  INTO quests OPTIONS {ignoreErrors: true}

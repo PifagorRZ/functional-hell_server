@@ -12,24 +12,29 @@ import (
 	driverHttp "github.com/arangodb/go-driver/http"
 )
 
+// Chapter model
 type Chapter struct {
-	title  string  `json:"title"`
-	quests []Quest `json:"quests"`
+	Id     int     `json:"id"`
+	Title  string  `json:"title"`
+	Quests []Quest `json:"quests"`
 }
 
+// Quest info
 type Quest struct {
-	title       string   `json:"title"`
-	text        string   `json:"text"`
-	regexps     []string `json:"regexps"`
-	regexpsNone []string `json:"regexpsNone"`
-	code        string   `json:"code"`
-	hints       []string `json:"hints"`
-	test        TestInfo `json:"test"`
+	Id          int      `json:"id"`
+	Title       string   `json:"title"`
+	Text        string   `json:"text"`
+	Regexps     []string `json:"regexps"`
+	RegexpsNone []string `json:"regexpsNone"`
+	Code        string   `json:"code"`
+	Hints       []string `json:"hints"`
+	Test        TestInfo `json:"test"`
 }
 
+// TestInfo model
 type TestInfo struct {
-	code   string `json:"code"`
-	answer string `json:"answer"`
+	Code   string `json:"code"`
+	Answer string `json:"answer"`
 }
 
 var db driver.Database
@@ -108,6 +113,9 @@ func createQueryType() graphql.ObjectConfig {
 	var QuestObject = graphql.NewObject(graphql.ObjectConfig{
 		Name: "quest",
 		Fields: graphql.Fields{
+			"id": &graphql.Field{
+				Type: graphql.ID,
+			},
 			"title": &graphql.Field{
 				Type: graphql.String,
 			},
@@ -135,6 +143,9 @@ func createQueryType() graphql.ObjectConfig {
 	var ChapterObject = graphql.NewObject(graphql.ObjectConfig{
 		Name: "chapter",
 		Fields: graphql.Fields{
+			"id": &graphql.Field{
+				Type: graphql.ID,
+			},
 			"title": &graphql.Field{
 				Type: graphql.String,
 			},
@@ -142,14 +153,20 @@ func createQueryType() graphql.ObjectConfig {
 				Type: graphql.NewList(QuestObject),
 				Args: graphql.FieldConfigArgument{
 					"id": &graphql.ArgumentConfig{
-						Type: graphql.NewNonNull(graphql.Int),
+						Type: graphql.Int,
 					},
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					id := p.Args["id"]
-					v, _ := id.(int)
-					log.Printf("fetching quest with id: %d", v)
-					return fetchQuestByiD(v)
+					parentId := p.Source.(Chapter).Id
+					if id != nil {
+						v, _ := id.(int)
+						log.Printf("fetching quest with id: %d", v)
+						return fetchQuestByiD(parentId, v)
+					} else {
+						log.Printf("fetching all quests")
+						return fetchQuestsByChapterId(parentId)
+					}
 				},
 			},
 		},
@@ -160,30 +177,32 @@ func createQueryType() graphql.ObjectConfig {
 			Type: graphql.NewList(ChapterObject),
 			Args: graphql.FieldConfigArgument{
 				"id": &graphql.ArgumentConfig{
-					Type: graphql.NewNonNull(graphql.Int),
+					Type: graphql.Int,
 				},
 			},
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				id := p.Args["id"]
-				v, _ := id.(int)
-				log.Printf("fetching chapter with id: %d", v)
-				return fetchChapterByiD(v)
+				if id != nil {
+					v, _ := id.(int)
+					log.Printf("fetching chapter with id: %d", v)
+					return fetchChapterByiD(v)
+				} else {
+					log.Printf("fetching all chapters")
+					return fetchAllChapters()
+				}
 			},
 		},
 	}}
 }
 
-func fetchChapterByiD(id int) (*Chapter, error) {
-	query := "FOR d IN chapters FILTER d.Id == @id LIMIT 5 RETURN d"
-	bindVars := map[string]interface{}{
-		"id": id,
-	}
-	cursor, err := db.Query(nil, query, bindVars)
+func fetchAllChapters() (*[]Chapter, error) {
+	query := "FOR c IN quests RETURN c"
+	cursor, err := db.Query(nil, query, nil)
 	if err != nil {
-		log.Fatalf("Can not get quest: %v", err)
+		log.Fatalf("Can not get all chapters: %v", err)
 	}
 	defer cursor.Close()
-	result := Chapter{}
+	var result []Chapter
 	for {
 		var doc Chapter
 		meta, err := cursor.ReadDocument(nil, &doc)
@@ -193,22 +212,22 @@ func fetchChapterByiD(id int) (*Chapter, error) {
 			log.Fatalf("Some issue(73): %v", err)
 		}
 		fmt.Printf("Got doc with key '%s' from query\n", meta)
-		result = doc
+		result = append(result, doc)
 	}
 	return &result, nil
 }
 
-func fetchQuestByiD(id int) (*Quest, error) {
-	query := "FOR d IN quests FILTER d.Id == @id LIMIT 5 RETURN d"
+func fetchQuestsByChapterId(parentId int) (*[]Quest, error) {
+	query := "FOR c IN quests FILTER c.id == @chapterId FOR q IN c.quests RETURN q"
 	bindVars := map[string]interface{}{
-		"id": id,
+		"chapterId": parentId,
 	}
 	cursor, err := db.Query(nil, query, bindVars)
 	if err != nil {
 		log.Fatalf("Can not get quest: %v", err)
 	}
 	defer cursor.Close()
-	result := Quest{}
+	var result []Quest
 	for {
 		var doc Quest
 		meta, err := cursor.ReadDocument(nil, &doc)
@@ -218,7 +237,58 @@ func fetchQuestByiD(id int) (*Quest, error) {
 			log.Fatalf("Some issue(73): %v", err)
 		}
 		fmt.Printf("Got doc with key '%s' from query\n", meta)
-		result = doc
+		result = append(result, doc)
+	}
+	return &result, nil
+}
+
+func fetchChapterByiD(id int) (*[]Chapter, error) {
+	query := "FOR d IN quests FILTER d.id == @chapterId RETURN d"
+	bindVars := map[string]interface{}{
+		"chapterId": id,
+	}
+	cursor, err := db.Query(nil, query, bindVars)
+	if err != nil {
+		log.Fatalf("Can not get chapter: %v", err)
+	}
+	defer cursor.Close()
+	var result []Chapter
+	for {
+		var doc Chapter
+		meta, err := cursor.ReadDocument(nil, &doc)
+		if driver.IsNoMoreDocuments(err) {
+			break
+		} else if err != nil {
+			log.Fatalf("Some issue(73): %v", err)
+		}
+		fmt.Printf("Got doc with key '%s' from query\n", meta)
+		result = append(result, doc)
+	}
+	return &result, nil
+}
+
+func fetchQuestByiD(parentId int, id int) (*[]Quest, error) {
+	query := "FOR c IN quests FILTER c.id == @chapterId FOR q IN c.quests FILTER q.id == @questId RETURN q"
+	bindVars := map[string]interface{}{
+		"questId":   id,
+		"chapterId": parentId,
+	}
+	cursor, err := db.Query(nil, query, bindVars)
+	if err != nil {
+		log.Fatalf("Can not get quest: %v", err)
+	}
+	defer cursor.Close()
+	var result []Quest
+	for {
+		var doc Quest
+		meta, err := cursor.ReadDocument(nil, &doc)
+		if driver.IsNoMoreDocuments(err) {
+			break
+		} else if err != nil {
+			log.Fatalf("Some issue(73): %v", err)
+		}
+		fmt.Printf("Got doc with key '%s' from query\n", meta)
+		result = append(result, doc)
 	}
 	return &result, nil
 }
