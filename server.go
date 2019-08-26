@@ -16,22 +16,22 @@ import (
 	driverHttp "github.com/arangodb/go-driver/http"
 )
 
-type Chapter {
+type Chapter struct {
 	title string `json:"title"`
-	quests Quest[] `json:"quests"`
+	quests []Quest `json:"quests"`
 }
 
-type Quest {
+type Quest struct {
 	title string `json:"title"`
 	text string `json:"text"`
-	regexps string[] `json:"regexps"`
-	regexpsNone string[] `json:"regexpsNone"`
+	regexps []string `json:"regexps"`
+	regexpsNone []string `json:"regexpsNone"`
 	code string `json:"code"`
-	hints string[] `json:"hints"`
+	hints []string `json:"hints"`
 	test TestInfo `json:"test"`
 }
 
-type TestInfo {
+type TestInfo struct {
 	code string `json:"code"`
 	answer string `json:"answer"`
 }
@@ -81,13 +81,15 @@ func main() {
 		GraphiQL: true,
 	})
 
+	http.HandleFunc("/ws", handleConnections)
+	go handleMessages()
 	fs := http.FileServer(http.Dir("static/"))
 	http.Handle("/graphql", handler)
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
-	http.HandleFunc("/chat", chatHandler)
+	// http.Handle("/chat", c.Handler(server))
 	http.HandleFunc("/quest", questHandler)
 	http.HandleFunc("/", notFoundHandler)
-	http.ListenAndServe(":80", nil)
+	http.ListenAndServe(":8080", nil)
 }
 
 func connectToDB() {
