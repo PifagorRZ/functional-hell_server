@@ -5,10 +5,6 @@ import (
 	"log"
 	"net/http"
 
-	"encoding/json"
-	"errors"
-	"io/ioutil"
-
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 
@@ -17,40 +13,23 @@ import (
 )
 
 type Chapter struct {
-	title string `json:"title"`
+	title  string  `json:"title"`
 	quests []Quest `json:"quests"`
 }
 
 type Quest struct {
-	title string `json:"title"`
-	text string `json:"text"`
-	regexps []string `json:"regexps"`
+	title       string   `json:"title"`
+	text        string   `json:"text"`
+	regexps     []string `json:"regexps"`
 	regexpsNone []string `json:"regexpsNone"`
-	code string `json:"code"`
-	hints []string `json:"hints"`
-	test TestInfo `json:"test"`
+	code        string   `json:"code"`
+	hints       []string `json:"hints"`
+	test        TestInfo `json:"test"`
 }
 
 type TestInfo struct {
-	code string `json:"code"`
+	code   string `json:"code"`
 	answer string `json:"answer"`
-}
-
-
-type Post struct {
-	UserID int    `json:"userId"`
-	ID     int    `json:"id"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-}
-
-// Comment is a comment
-type Comment struct {
-	PostID int    `json:"postId"`
-	ID     int    `json:"id"`
-	Name   string `json:"name"`
-	Email  string `json:"email"`
-	Body   string `json:"body"`
 }
 
 var db driver.Database
@@ -60,17 +39,11 @@ func main() {
 
 	// col, err := db.Collection(nil, "quests")
 	// if err != nil {
-	// 	log.Fatalf("Can not connect to collection: %v", err)
+	//   log.Fatalf("Can not connect to collection: %v", err)
 	// }
 
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
-		Query: graphql.NewObject(
-			createQueryType(
-				createPostType(
-					createCommentType(),
-				),
-			),
-		),
+		Query: graphql.NewObject(createQueryType()),
 	})
 	if err != nil {
 		log.Fatalf("failed to create new schema, error: %v", err)
@@ -119,10 +92,72 @@ func notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "404 Not Found")
 }
 
-func createQueryType(postType *graphql.Object) graphql.ObjectConfig {
-	return graphql.ObjectConfig{Name: "QueryType", Fields: graphql.Fields{
-		"post": &graphql.Field{
-			Type: postType,
+func createQueryType() graphql.ObjectConfig {
+	var TestInfoObject = graphql.NewObject(graphql.ObjectConfig{
+		Name: "test",
+		Fields: graphql.Fields{
+			"code": &graphql.Field{
+				Type: graphql.String,
+			},
+			"answer": &graphql.Field{
+				Type: graphql.String,
+			},
+		},
+	})
+
+	var QuestObject = graphql.NewObject(graphql.ObjectConfig{
+		Name: "quest",
+		Fields: graphql.Fields{
+			"title": &graphql.Field{
+				Type: graphql.String,
+			},
+			"text": &graphql.Field{
+				Type: graphql.String,
+			},
+			"regexps": &graphql.Field{
+				Type: graphql.NewList(graphql.String),
+			},
+			"regexpsNone": &graphql.Field{
+				Type: graphql.NewList(graphql.String),
+			},
+			"code": &graphql.Field{
+				Type: graphql.String,
+			},
+			"hints": &graphql.Field{
+				Type: graphql.NewList(graphql.String),
+			},
+			"test": &graphql.Field{
+				Type: TestInfoObject,
+			},
+		},
+	})
+
+	var ChapterObject = graphql.NewObject(graphql.ObjectConfig{
+		Name: "chapter",
+		Fields: graphql.Fields{
+			"title": &graphql.Field{
+				Type: graphql.String,
+			},
+			"quests": &graphql.Field{
+				Type: graphql.NewList(QuestObject),
+				Args: graphql.FieldConfigArgument{
+					"id": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.Int),
+					},
+				},
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					id := p.Args["id"]
+					v, _ := id.(int)
+					log.Printf("fetching quest with id: %d", v)
+					return fetchQuestByiD(v)
+				},
+			},
+		},
+	})
+
+	return graphql.ObjectConfig{Name: "chapters", Fields: graphql.Fields{
+		"chapters": &graphql.Field{
+			Type: graphql.NewList(ChapterObject),
 			Args: graphql.FieldConfigArgument{
 				"id": &graphql.ArgumentConfig{
 					Type: graphql.NewNonNull(graphql.Int),
@@ -131,77 +166,26 @@ func createQueryType(postType *graphql.Object) graphql.ObjectConfig {
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				id := p.Args["id"]
 				v, _ := id.(int)
-				log.Printf("fetching post with id: %d", v)
-				return fetchPostByiD(v)
+				log.Printf("fetching chapter with id: %d", v)
+				return fetchChapterByiD(v)
 			},
 		},
 	}}
 }
 
-func createPostType(commentType *graphql.Object) *graphql.Object {
-	return graphql.NewObject(graphql.ObjectConfig{
-		Name: "Post",
-		Fields: graphql.Fields{
-			"userId": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Int),
-			},
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Int),
-			},
-			"title": &graphql.Field{
-				Type: graphql.String,
-			},
-			"body": &graphql.Field{
-				Type: graphql.String,
-			},
-			"comments": &graphql.Field{
-				Type: graphql.NewList(commentType),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					post, _ := p.Source.(*Post)
-					log.Printf("fetching comments of post with id: %d", post.ID)
-					return fetchCommentsByPostID(post.ID)
-				},
-			},
-		},
-	})
-}
-
-func createCommentType() *graphql.Object {
-	return graphql.NewObject(graphql.ObjectConfig{
-		Name: "Comment",
-		Fields: graphql.Fields{
-			"postId": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Int),
-			},
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Int),
-			},
-			"name": &graphql.Field{
-				Type: graphql.String,
-			},
-			"email": &graphql.Field{
-				Type: graphql.String,
-			},
-			"body": &graphql.Field{
-				Type: graphql.String,
-			},
-		},
-	})
-}
-
-func fetchPostByiD(id int) (*Post, error) {
-	query := "FOR d IN quests FILTER d.Id == @id LIMIT 5 RETURN d"
+func fetchChapterByiD(id int) (*Chapter, error) {
+	query := "FOR d IN chapters FILTER d.Id == @id LIMIT 5 RETURN d"
 	bindVars := map[string]interface{}{
 		"id": id,
 	}
 	cursor, err := db.Query(nil, query, bindVars)
 	if err != nil {
-		log.Fatalf("Can not get quests: %v", err)
+		log.Fatalf("Can not get quest: %v", err)
 	}
 	defer cursor.Close()
-	result := Post{}
+	result := Chapter{}
 	for {
-		var doc Post
+		var doc Chapter
 		meta, err := cursor.ReadDocument(nil, &doc)
 		if driver.IsNoMoreDocuments(err) {
 			break
@@ -214,23 +198,27 @@ func fetchPostByiD(id int) (*Post, error) {
 	return &result, nil
 }
 
-func fetchCommentsByPostID(id int) ([]Comment, error) {
-	resp, err := http.Get(fmt.Sprintf("http://jsonplaceholder.typicode.com/posts/%d/comments", id))
+func fetchQuestByiD(id int) (*Quest, error) {
+	query := "FOR d IN quests FILTER d.Id == @id LIMIT 5 RETURN d"
+	bindVars := map[string]interface{}{
+		"id": id,
+	}
+	cursor, err := db.Query(nil, query, bindVars)
 	if err != nil {
-		return nil, err
+		log.Fatalf("Can not get quest: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("%s: %s", "could not fetch data", resp.Status)
+	defer cursor.Close()
+	result := Quest{}
+	for {
+		var doc Quest
+		meta, err := cursor.ReadDocument(nil, &doc)
+		if driver.IsNoMoreDocuments(err) {
+			break
+		} else if err != nil {
+			log.Fatalf("Some issue(73): %v", err)
+		}
+		fmt.Printf("Got doc with key '%s' from query\n", meta)
+		result = doc
 	}
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.New("could not read data")
-	}
-	result := []Comment{}
-	err = json.Unmarshal(b, &result)
-	if err != nil {
-		return nil, errors.New("could not unmarshal data")
-	}
-	return result, nil
+	return &result, nil
 }
